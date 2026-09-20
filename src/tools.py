@@ -1,3 +1,5 @@
+from src.guardrails import apply_guardrails
+
 import os
 import pandas as pd
 
@@ -152,17 +154,15 @@ def calculate_driver_incentive(driver_count, severity_level):
 # ---------------------------------------------------------
 # Tool 3: Surge Override
 # ---------------------------------------------------------
-
 def trigger_surge_override(
     airport_code,
     new_multiplier,
-    reason
+    reason,
+    approved=False
 ):
     """
-    Mock surge override execution.
-
-    Actual approval and guardrails will be implemented
-    later in Day 4.
+    Execute surge override only after Day 4 guardrail validation
+    and required human approval.
     """
 
     if not airport_code:
@@ -185,29 +185,43 @@ def trigger_surge_override(
 
     airport_code = airport_code.upper().strip()
 
-    if airport_code not in {"SFO", "LAX", "JFK"}:
-        return {
-            "status": "error",
-            "error": f"Invalid airport code: {airport_code}"
-        }
-
     try:
         new_multiplier = float(new_multiplier)
-
     except (ValueError, TypeError):
         return {
             "status": "error",
             "error": "new_multiplier must be numeric"
         }
 
-    if new_multiplier <= 0:
+    # -----------------------------------------------------
+    # DAY 4 GUARDRAILS
+    # -----------------------------------------------------
+
+    guardrail_result = apply_guardrails(
+        airport_code=airport_code,
+        action="increase_surge",
+        target_multiplier=new_multiplier
+    )
+
+    # Block policy violations / invalid input
+    if guardrail_result["status"] == "BLOCKED":
         return {
-            "status": "error",
-            "error": "new_multiplier must be greater than 0"
+            "status": "blocked",
+            "guardrails": guardrail_result
         }
 
-    # Day 2 = mock execution only.
-    # Policy guardrails and human approval are Day 4.
+    # Require human approval for high-risk action
+    if guardrail_result["status"] == "APPROVAL_REQUIRED":
+        if not approved:
+            return {
+                "status": "approval_required",
+                "message": "Human approval is required before surge override execution.",
+                "guardrails": guardrail_result
+            }
+
+    # -----------------------------------------------------
+    # MOCK EXECUTION
+    # -----------------------------------------------------
 
     return {
         "status": "success",
@@ -215,7 +229,9 @@ def trigger_surge_override(
         "airport_code": airport_code,
         "new_multiplier": new_multiplier,
         "reason": reason,
-        "execution": "mock_success"
+        "execution": "mock_success",
+        "guardrails": guardrail_result,
+        "human_approved": approved
     }
 
 

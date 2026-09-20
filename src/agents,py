@@ -1,0 +1,91 @@
+import os
+import json
+import requests
+
+from src.tools import (
+    get_airport_metrics,
+    calculate_driver_incentive,
+    trigger_surge_override
+)
+
+from src.rag_pipeline import retrieve_documents
+from src.memory import ConversationMemory
+
+
+# ---------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------
+
+OLLAMA_URL = "http://localhost:11434/api/generate"
+LLM_MODEL = "qwen3:8b"
+
+MAX_ITERATIONS = 5
+
+
+# ---------------------------------------------------------
+# LLM Helper
+# ---------------------------------------------------------
+
+def call_llm(prompt):
+    """
+    Send a prompt to the local Ollama model.
+    """
+
+    response = requests.post(
+        OLLAMA_URL,
+        json={
+            "model": LLM_MODEL,
+            "prompt": prompt,
+            "stream": False
+        },
+        timeout=120
+    )
+
+    response.raise_for_status()
+
+    return response.json()["response"]
+
+
+# ---------------------------------------------------------
+# Operations Investigator Agent
+# ---------------------------------------------------------
+
+def operations_investigator(airport_code):
+    """
+    Investigate airport operational conditions.
+
+    Uses operational telemetry tools to identify
+    anomalies and contributing factors.
+    """
+
+    metrics = get_airport_metrics(airport_code)
+
+    if metrics["status"] != "success":
+        return metrics
+
+    completion_rate = metrics["completion_rate"]
+
+    # Day 3 operational threshold from the project scenario
+    expected_threshold = 85.0
+
+    if completion_rate < expected_threshold:
+        status = "ANOMALY"
+    else:
+        status = "NORMAL"
+
+    return {
+        "agent": "operations_investigator",
+        "status": "success",
+        "airport_code": airport_code,
+        "completion_rate": completion_rate,
+        "expected_threshold": expected_threshold,
+        "operational_status": status,
+        "average_eta": metrics["average_eta"],
+        "active_drivers": metrics["active_drivers"],
+        "driver_cancellation_rate": metrics[
+            "driver_cancellation_rate"
+        ],
+        "queue_size": metrics["queue_size"],
+        "surge_multiplier": metrics["surge_multiplier"],
+        "timestamp": metrics["timestamp"]
+    }
